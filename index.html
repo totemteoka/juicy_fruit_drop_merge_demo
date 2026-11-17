@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Unity WebGL Player | Juicy Fruit Drop Merge</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
-      <canvas id="unity-canvas" width=600 height=960 tabindex="-1"></canvas>
+      <canvas id="unity-canvas" width="600" height="960" tabindex="-1"></canvas>
       <div id="unity-loading-bar">
         <div id="unity-logo"></div>
         <div id="unity-progress-bar-empty">
@@ -33,6 +33,14 @@
       var warningBanner = document.querySelector("#unity-warning");
       var footer = document.querySelector("#unity-footer");
 
+      function detectMobile() {
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) return true;
+        if (navigator.maxTouchPoints > 1 && Math.min(window.innerWidth, window.innerHeight) < 700) return true;
+        return false;
+      }
+
+      var isMobile = detectMobile();
+
       function unityShowBanner(msg, type) {
         function updateBannerVisibility() {
           warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
@@ -51,29 +59,46 @@
         updateBannerVisibility();
       }
 
-      // Keep 9:16 canvas fully visible (no top/bottom crop) inside the browser window.
-      function fitCanvasToViewport() {
-        var designW = 600;
-        var designH = 960;
-        // Reserve footer space even if offsetHeight is 0 before layout
-        var footerH = footer ? Math.max(footer.offsetHeight, 40) : 0;
-        var maxW = window.innerWidth;
-        var maxH = Math.max(100, window.innerHeight - footerH);
-        var scale = Math.min(maxW / designW, maxH / designH);
-        var w = Math.floor(designW * scale);
-        var h = Math.floor(designH * scale);
-        canvas.style.width = w + "px";
-        canvas.style.height = h + "px";
-
-        // Avoid CSS centering clipping the top when container is tall
-        var totalH = h + (footer ? footer.offsetHeight : 0);
-        if (totalH >= window.innerHeight - 1) {
-          container.style.top = "0";
-          container.style.transform = "translate(-50%, 0)";
-        } else {
-          container.style.top = "50%";
-          container.style.transform = "translate(-50%, -50%)";
+      function viewportSize() {
+        var vv = window.visualViewport;
+        if (vv && vv.width && vv.height) {
+          return { w: Math.floor(vv.width), h: Math.floor(vv.height) };
         }
+        return { w: window.innerWidth, h: window.innerHeight };
+      }
+
+      // Stretch canvas to the exact visible viewport:
+      // full screen, no black bars, no CSS cropping of UI edges.
+      function fitCanvasToViewport() {
+        isMobile = detectMobile();
+        if (isMobile) {
+          container.className = "unity-mobile";
+          canvas.className = "unity-mobile";
+        } else {
+          container.className = "unity-desktop";
+          canvas.className = "";
+        }
+
+        var vp = viewportSize();
+        var footerH = (!isMobile && footer) ? Math.max(footer.offsetHeight, 38) : 0;
+        // Respect iOS/Android notches when available
+        var cs = window.getComputedStyle(document.documentElement);
+        var insetL = isMobile ? (parseFloat(cs.getPropertyValue("--sat-left")) || 0) : 0;
+        var insetR = isMobile ? (parseFloat(cs.getPropertyValue("--sat-right")) || 0) : 0;
+        var insetT = isMobile ? (parseFloat(cs.getPropertyValue("--sat-top")) || 0) : 0;
+        var insetB = isMobile ? (parseFloat(cs.getPropertyValue("--sat-bottom")) || 0) : 0;
+
+        var maxW = Math.max(1, Math.floor(vp.w - insetL - insetR));
+        var maxH = Math.max(100, Math.floor(vp.h - footerH - insetT - insetB));
+
+        canvas.style.width = maxW + "px";
+        canvas.style.height = maxH + "px";
+        container.style.left = "";
+        container.style.top = "";
+        container.style.transform = "";
+        container.style.width = maxW + "px";
+        container.style.height = (maxH + (!isMobile ? footerH : 0)) + "px";
+        container.style.overflow = "hidden";
       }
 
       var buildUrl = "Build";
@@ -89,13 +114,21 @@
         showBanner: unityShowBanner,
       };
 
-      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      if (isMobile) {
         container.className = "unity-mobile";
         canvas.className = "unity-mobile";
+        config.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
       }
 
       fitCanvasToViewport();
       window.addEventListener("resize", fitCanvasToViewport);
+      window.addEventListener("orientationchange", function () {
+        setTimeout(fitCanvasToViewport, 150);
+      });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", fitCanvasToViewport);
+        window.visualViewport.addEventListener("scroll", fitCanvasToViewport);
+      }
 
       loadingBar.style.display = "block";
 
@@ -107,6 +140,8 @@
         }).then((unityInstance) => {
           loadingBar.style.display = "none";
           fitCanvasToViewport();
+          setTimeout(fitCanvasToViewport, 50);
+          setTimeout(fitCanvasToViewport, 300);
           fullscreenButton.onclick = () => {
             unityInstance.SetFullscreen(1);
           };
